@@ -19,6 +19,7 @@ func main() {
 	}
 
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.TimestampFieldName = "timestamp"
 
 	msgChan := make(chan watcher.AllocData)
 

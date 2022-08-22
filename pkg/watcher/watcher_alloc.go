@@ -14,7 +14,8 @@ func NewAllocWatcher(client *api.Client) Watcher {
 		lastChangeIndex: 0,
 		needInit:        true,
 		queryOptions: &api.QueryOptions{
-			AllowStale: false,
+			Namespace:  "*",
+			AllowStale: true,
 			WaitIndex:  0,
 			WaitTime:   5 * time.Minute,
 		},
@@ -48,6 +49,7 @@ func (w *Watcher) Run(msgChan chan AllocData) {
 		lastIdx = meta.LastIndex
 
 		for _, alloc := range allocations {
+			last5min := time.Now().Add(-5 * time.Minute)
 
 			if !changed(alloc.ModifyIndex, lastIdx) {
 				continue
@@ -59,9 +61,14 @@ func (w *Watcher) Run(msgChan chan AllocData) {
 
 			lastIdx = alloc.ModifyIndex
 
-			for _, v := range alloc.TaskStates {
+			for task, v := range alloc.TaskStates {
 				for _, e := range v.Events {
 					if e.Type != api.TaskTerminated {
+						continue
+					}
+					eventAt := time.Unix(0, e.Time)
+
+					if eventAt.Before(last5min) {
 						continue
 					}
 
@@ -69,7 +76,16 @@ func (w *Watcher) Run(msgChan chan AllocData) {
 						adId := strconv.Itoa(int(e.Time)) + alloc.ID
 						if !allocCache.Contains(adId) {
 							allocCache.Add(adId, nil)
-							msgChan <- AllocData{ID: alloc.ID, Node: alloc.NodeName, Job: alloc.JobID, TaskGroup: alloc.TaskGroup, Message: e.Message}
+							ad := AllocData{
+								ID:        alloc.ID,
+								Node:      alloc.NodeName,
+								Job:       alloc.JobID,
+								Task:      task,
+								TaskGroup: alloc.TaskGroup,
+								Message:   e.Message,
+								EventAt:   eventAt,
+							}
+							msgChan <- ad
 						}
 					}
 				}
